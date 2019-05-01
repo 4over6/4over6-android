@@ -20,8 +20,13 @@ class VpnService4Over6: VpnService() {
         if (info.dns2 != "0.0.0.0") builder.addDnsServer(info.dns2)
         if (info.dns3 != "0.0.0.0") builder.addDnsServer(info.dns3)
         vpnFd = builder.establish()
-        Log.d(TAG, "VPN connection established")
+        Log.d(TAG, "VPN TUN established")
         return vpnFd.fd
+    }
+
+    fun stop() {
+        Log.d(TAG, "VPN TUN closed")
+        vpnFd.close()
     }
 
 }

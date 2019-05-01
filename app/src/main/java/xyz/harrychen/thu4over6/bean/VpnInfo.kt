@@ -3,6 +3,7 @@ package xyz.harrychen.thu4over6.bean
 class VpnInfo {
     var ipv4: String = ""
     var ipv6: String = ""
+    var port: String = ""
     var route: String = ""
     var dns1: String = ""
     var dns2: String = ""
@@ -12,7 +13,7 @@ class VpnInfo {
 
     override fun toString(): String {
         return """
-            Remote Server: [$ipv6]
+            Remote Server: [$ipv6]:$port
             Tunnel IP: $ipv4
             Route: $route
             DNS Servers: $dns1, $dns2, $dns3

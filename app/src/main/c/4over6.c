@@ -29,6 +29,7 @@ static pthread_t receive_pid = -1, timer_pid = -1, forward_pid = -1;
 static time_t last_heartbeat_recv = -1, last_heartbeat_send = -1;
 
 char ip[20], route[20], dns1[20], dns2[20], dns3[20];
+int out_byte, out_pkt, in_byte, in_pkt; 
 
 static uint8_t *read_exact(int fd, size_t len) {
     static size_t pos = 0;
@@ -109,6 +110,9 @@ static void *receive_thread(void *args) {
                      msg_length);
             }
         }
+
+        in_pkt++;
+        in_byte += msg_length;
     }
     return NULL;
 }
@@ -139,6 +143,8 @@ static void *timer_thread(void *args) {
             } else {
                 LOGI("Sent heartbeat to server");
                 last_heartbeat_send = current_time;
+                out_pkt++;
+                out_byte += HEADER_LEN;
             }
         }
         sleep(1);
@@ -179,6 +185,9 @@ static void *forward_thread(void *args) {
         data.header.length = len + HEADER_LEN;
         if (write(socket_fd, &data, data.header.length) < 0) {
             LOGE("Error writing payload to socket: %s", strerror(errno));
+        } else {
+            out_pkt++;
+            out_byte += data.header.length;
         }
     }
     return NULL;
@@ -209,6 +218,7 @@ int establish_connection(const char *addr_s, int port) {
     }
 
     LOGI("Connected to server %s", addr_s);
+    out_byte = out_pkt = in_byte = in_pkt = 0;
 
     // thread for handling incoming messages
     pthread_create(&receive_pid, NULL, receive_thread, NULL);
@@ -259,7 +269,7 @@ void tearup_connection() {
     }
 
     if (forward_pid != -1) {
-        pthread_kill(forward_thread, SIGUSR2);
+        pthread_kill(forward_pid, SIGUSR2);
         forward_pid = -1;
         LOGI("Forward thread terminated");
     }

@@ -10,21 +10,25 @@ import android.util.Log
 import android.widget.Toast
 import io.reactivex.Observable
 import io.reactivex.android.schedulers.AndroidSchedulers
+import io.reactivex.disposables.Disposable
 import io.reactivex.schedulers.Schedulers
 import kotlinx.android.synthetic.main.activity_main.*
 import xyz.harrychen.thu4over6.bean.ServerInfo
-import xyz.harrychen.thu4over6.bean.Traffic
+import xyz.harrychen.thu4over6.bean.Statistics
 import xyz.harrychen.thu4over6.bean.VpnInfo
 import xyz.harrychen.thu4over6.net.VpnService4Over6
 import java.lang.Exception
 import java.lang.NullPointerException
 import java.lang.NumberFormatException
+import java.util.concurrent.TimeUnit
 
 class MainActivity : AppCompatActivity() {
 
     private lateinit var service: VpnService4Over6
     private lateinit var info: VpnInfo
-    private lateinit var traffic: Traffic
+    private var statistics: Statistics = Statistics()
+
+    private lateinit var statisticsUpdater: Disposable
 
     private var socketConnected = false
     private var vpnConnected = false
@@ -57,7 +61,9 @@ class MainActivity : AppCompatActivity() {
     private fun toggleConnectState() {
 
         if (vpnConnected) {
+            stopVPN()
             tearupConnection()
+            statisticsUpdater.dispose()
             socketConnected = false
             vpnConnected = false
             text_info.text = "Disconnected"
@@ -80,7 +86,7 @@ class MainActivity : AppCompatActivity() {
         toggleAllControls(false)
 
         text_info.text = "Connecting to $addr:$port..."
-        Observable.just(establishConnection(ServerInfo(addr, port)))
+        Observable.just(establishConnection(addr, port))
             .map {
                 if (!it) throw Exception()
                 else requestConfiguration(VpnInfo())
@@ -91,6 +97,7 @@ class MainActivity : AppCompatActivity() {
                 info = it
                 // hardcode some information
                 info.ipv6 = addr
+                info.port = port
                 info.searchDomain = "tsinghua.edu.cn"
                 socketConnected = true
                 text_info.text = "Preparing to establish VPN connection:\n$info"
@@ -120,10 +127,34 @@ class MainActivity : AppCompatActivity() {
         service.protect(info.socketFd)
         val vpnFd = service.setup(info)
         setupTun(vpnFd)
-        // after success
         vpnConnected = true
         button_connect.text = "Disconnect"
         button_connect.isEnabled = true
+
+        // enable statistics updater
+        statisticsUpdater = Observable.interval(1, TimeUnit.SECONDS)
+            .subscribeOn(Schedulers.io())
+            .observeOn(AndroidSchedulers.mainThread())
+            .subscribe{
+                val newStatistics = getStatistics(Statistics())
+                if (newStatistics.state) {
+                    var uploadSpeed = newStatistics.uploadTotalByte - statistics.uploadTotalByte
+                    var downloadSpeed = newStatistics.downloadTotalByte - statistics.downloadTotalByte
+                    statistics = newStatistics
+                    text_info.text =
+                            "VPN Connected\n$info\nUpload:\t${statistics.uploadTotalByte}\tBytes / ${statistics.uploadTotalPkt}\tPackets\t\t$uploadSpeed Byte/s\nDownload:${statistics.downloadTotalByte}\tBytes / ${statistics.downloadTotalPkt}\tPackets\t\t$downloadSpeed Byte/s"
+                } else {
+                    // connection closed
+                    text_info.text = "Heartbeat timeout, connection closed"
+                    stopVPN()
+                    toggleAllControls(true)
+                    statisticsUpdater.dispose()
+                }
+            }
+    }
+
+    private fun stopVPN() {
+        service.stop()
     }
 
 
@@ -154,9 +185,10 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private external fun establishConnection(info: ServerInfo): Boolean
+    private external fun establishConnection(addr: String, port: String): Boolean
     private external fun requestConfiguration(info: VpnInfo): VpnInfo
     private external fun tearupConnection()
+    private external fun getStatistics(data: Statistics): Statistics
     private external fun setupTun(fd: Int)
 
     companion object {
