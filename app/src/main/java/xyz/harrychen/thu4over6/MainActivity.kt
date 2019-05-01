@@ -13,10 +13,8 @@ import io.reactivex.android.schedulers.AndroidSchedulers
 import io.reactivex.disposables.Disposable
 import io.reactivex.schedulers.Schedulers
 import kotlinx.android.synthetic.main.activity_main.*
-import xyz.harrychen.thu4over6.bean.ServerInfo
 import xyz.harrychen.thu4over6.bean.Statistics
 import xyz.harrychen.thu4over6.bean.VpnInfo
-import xyz.harrychen.thu4over6.net.VpnService4Over6
 import java.lang.Exception
 import java.lang.NullPointerException
 import java.lang.NumberFormatException
@@ -24,9 +22,8 @@ import java.util.concurrent.TimeUnit
 
 class MainActivity : AppCompatActivity() {
 
-    private lateinit var service: VpnService4Over6
     private lateinit var info: VpnInfo
-    private var statistics: Statistics = Statistics()
+    private lateinit var statistics: Statistics
 
     private lateinit var statisticsUpdater: Disposable
 
@@ -44,6 +41,18 @@ class MainActivity : AppCompatActivity() {
             text_info.text = "Not Connected"
         }
         button_connect.setOnClickListener { toggleConnectState() }
+
+        statistics = getStatistics(Statistics())
+        if (statistics.state) {
+            // VPN still connected
+            this.statistics = statistics
+            info = requestConfiguration(VpnInfo())
+            input_server_addr.setText(info.ipv6)
+            input_server_port.setText(info.port)
+            Log.d(TAG, "VPN still connected after UI restarts")
+            toggleAllControls(false)
+            afterVPNConnected()
+        }
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
@@ -123,14 +132,13 @@ class MainActivity : AppCompatActivity() {
 
     private fun doVPNConnection() {
         Log.d(TAG, "Starting VPN connection")
-        service = VpnService4Over6()
-        service.protect(info.socketFd)
-        val vpnFd = service.setup(info)
+        MyApp.service.protect(info.socketFd)
+        val vpnFd = MyApp.service.setup(info)
         setupTun(vpnFd)
-        vpnConnected = true
-        button_connect.text = "Disconnect"
-        button_connect.isEnabled = true
+        afterVPNConnected()
+    }
 
+    private fun afterVPNConnected() {
         // enable statistics updater
         statisticsUpdater = Observable.interval(1, TimeUnit.SECONDS)
             .subscribeOn(Schedulers.io())
@@ -151,10 +159,13 @@ class MainActivity : AppCompatActivity() {
                     statisticsUpdater.dispose()
                 }
             }
+        vpnConnected = true
+        button_connect.text = "Disconnect"
+        button_connect.isEnabled = true
     }
 
     private fun stopVPN() {
-        service.stop()
+        MyApp.service.stop()
     }
 
 

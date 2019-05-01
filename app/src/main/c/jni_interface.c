@@ -1,6 +1,9 @@
 #include <jni.h>
 #include <stdlib.h>
 
+#define TAG "jni_interface"
+#include "log.h"
+
 #include "4over6.h"
 
 JNIEXPORT jboolean JNICALL
@@ -9,14 +12,13 @@ Java_xyz_harrychen_thu4over6_MainActivity_establishConnection(JNIEnv *env, jobje
     const char *addr_s = (*env)->GetStringUTFChars(env, jaddr, NULL);
     const char *port_s = (*env)->GetStringUTFChars(env, jport, NULL);
 
+    strcpy(port, port_s);
+    strcpy(remote, addr_s);
+
     int port = atoi(port_s);
     int result = establish_connection(addr_s, port);
 
-    if (result < 0) {
-        return (jboolean)0;
-    }
-
-    return (jboolean)1;
+    return result < 0 ? JNI_FALSE : JNI_TRUE;
 }
 
 
@@ -53,6 +55,19 @@ Java_xyz_harrychen_thu4over6_MainActivity_requestConfiguration(JNIEnv *env, jobj
     js = (*env)->NewStringUTF(env, ip);
     (*env)->SetObjectField(env, obj, id, js);
 
+    id = (*env)->GetFieldID(env, cls, "ipv6", "Ljava/lang/String;");
+    js = (*env)->NewStringUTF(env, remote);
+    (*env)->SetObjectField(env, obj, id, js);
+
+    id = (*env)->GetFieldID(env, cls, "port", "Ljava/lang/String;");
+    js = (*env)->NewStringUTF(env, port);
+    (*env)->SetObjectField(env, obj, id, js);
+
+    // hardcode
+    id = (*env)->GetFieldID(env, cls, "searchDomain", "Ljava/lang/String;");
+    js = (*env)->NewStringUTF(env, "tsinghua.edu.cn");
+    (*env)->SetObjectField(env, obj, id, js);
+
     id = (*env)->GetFieldID(env, cls, "route", "Ljava/lang/String;");
     js = (*env)->NewStringUTF(env, route);
     (*env)->SetObjectField(env, obj, id, js);
@@ -84,7 +99,7 @@ Java_xyz_harrychen_thu4over6_MainActivity_getStatistics(JNIEnv *env, jobject _th
     jfieldID id;
 
     id = (*env)->GetFieldID(env, cls, "state", "Z");
-    (*env)->SetBooleanField(env, obj, id, (jboolean) socket_fd != -1);
+    (*env)->SetBooleanField(env, obj, id, socket_fd != -1 ? JNI_TRUE : JNI_FALSE);
     id = (*env)->GetFieldID(env, cls, "uploadTotalPkt", "I");
     (*env)->SetIntField(env, obj, id, (jint) out_pkt);
     id = (*env)->GetFieldID(env, cls, "uploadTotalByte", "I");
