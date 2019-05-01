@@ -1,7 +1,12 @@
 package xyz.harrychen.thu4over6
 
+import android.annotation.SuppressLint
+import android.app.Activity
+import android.content.Intent
+import android.net.VpnService
 import android.support.v7.app.AppCompatActivity
 import android.os.Bundle
+import android.util.Log
 import android.widget.Toast
 import io.reactivex.Observable
 import io.reactivex.android.schedulers.AndroidSchedulers
@@ -12,9 +17,8 @@ import xyz.harrychen.thu4over6.bean.Traffic
 import xyz.harrychen.thu4over6.bean.VpnInfo
 import xyz.harrychen.thu4over6.net.VpnService4Over6
 import java.lang.Exception
+import java.lang.NullPointerException
 import java.lang.NumberFormatException
-import java.net.Inet6Address
-import java.net.UnknownHostException
 
 class MainActivity : AppCompatActivity() {
 
@@ -24,6 +28,8 @@ class MainActivity : AppCompatActivity() {
 
     private var socketConnected = false
     private var vpnConnected = false
+
+    private val TAG = "Main"
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -36,9 +42,22 @@ class MainActivity : AppCompatActivity() {
         button_connect.setOnClickListener { toggleConnectState() }
     }
 
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        // assume that the only intent is VPN preparation
+        if (resultCode == Activity.RESULT_OK) {
+            doVPNConnection()
+        } else {
+            toggleAllControls(true)
+            text_info.text = "VPN permission denied by user"
+        }
+    }
+
+    @SuppressLint("CheckResult")
     private fun toggleConnectState() {
 
         if (vpnConnected) {
+            tearupConnection()
             socketConnected = false
             vpnConnected = false
             text_info.text = "Disconnected"
@@ -64,7 +83,7 @@ class MainActivity : AppCompatActivity() {
         Observable.just(establishConnection(ServerInfo(addr, port)))
             .map {
                 if (!it) throw Exception()
-                else requestConfiguration()!!
+                else requestConfiguration(VpnInfo())
             }
             .subscribeOn(Schedulers.io())
             .observeOn(AndroidSchedulers.mainThread())
@@ -75,18 +94,36 @@ class MainActivity : AppCompatActivity() {
                 info.searchDomain = "tsinghua.edu.cn"
                 socketConnected = true
                 text_info.text = "Preparing to establish VPN connection:\n$info"
-                service = VpnService4Over6(info)
-                // TODO: establish VPN connection
-
-                // after success
-                vpnConnected = true
-                button_connect.text = "Disconnect"
-                button_connect.isEnabled = true
+                prepareVPN()
             }, {
+                Log.e(TAG,"Error connecting to server", it)
                 showToast("Error connecting to server")
                 text_info.text = "Error establishing connection or requesting configuration"
                 toggleAllControls(true)
             })
+    }
+
+    private fun prepareVPN() {
+        Log.d(TAG, "Preparing VPN connection")
+        val vpnIntent = VpnService.prepare(this)
+        // intent will be null if no preparation is needed, so it is actually Intent?
+        try {
+            startActivityForResult(vpnIntent, 0)
+        } catch (e: NullPointerException) {
+            doVPNConnection()
+        }
+    }
+
+    private fun doVPNConnection() {
+        Log.d(TAG, "Starting VPN connection")
+        service = VpnService4Over6()
+        service.protect(info.socketFd)
+        val vpnFd = service.setup(info)
+        setupTun(vpnFd)
+        // after success
+        vpnConnected = true
+        button_connect.text = "Disconnect"
+        button_connect.isEnabled = true
     }
 
 
@@ -96,10 +133,6 @@ class MainActivity : AppCompatActivity() {
         input_server_addr.isEnabled = enabled
         input_server_port.isEnabled = enabled
     }
-
-
-    private external fun establishConnection(info: ServerInfo): Boolean
-    private external fun requestConfiguration(): VpnInfo?
 
 
     private fun showToast(t: String) {
@@ -121,6 +154,10 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private external fun establishConnection(info: ServerInfo): Boolean
+    private external fun requestConfiguration(info: VpnInfo): VpnInfo
+    private external fun tearupConnection()
+    private external fun setupTun(fd: Int)
 
     companion object {
         init {

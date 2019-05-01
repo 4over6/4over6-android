@@ -8,6 +8,7 @@ class VpnInfo {
     var dns2: String = ""
     var dns3: String = ""
     var searchDomain: String = ""
+    var socketFd: Int = -1
 
     override fun toString(): String {
         return """
